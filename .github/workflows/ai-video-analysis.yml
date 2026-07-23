@@ -1,0 +1,38 @@
+name: AI Video Analysis Engine
+
+on:
+  repository_dispatch:
+    types: [analyze_video]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-generativeai
+          
+      - name: Download Video
+        run: |
+          wget -O video.mp4 "${{ github.event.client_payload.video_url }}"
+          
+      - name: Run Gemini AI Analysis
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python ai-engine/gemini_analyzer.py --video video.mp4 --category "${{ github.event.client_payload.category }}"
+          
+      - name: Send Results back to App
+        run: |
+          curl -X POST "${{ github.event.client_payload.callback_url }}" \
+            -H "Content-Type: application/json" \
+            -d @analysis_result.json
