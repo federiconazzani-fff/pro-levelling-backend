@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pro.levelling</string>
+    <string name="title_activity_main">Pro.levelling</string>
+    <string name="package_name">com.nazza.elitepro</string>
+    <string name="custom_url_scheme">com.nazza.elitepro</string>
+</resources>

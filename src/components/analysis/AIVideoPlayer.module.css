@@ -1,0 +1,93 @@
+.container {
+  position: relative;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  background: #000;
+}
+
+.video {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.overlayContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; 
+}
+
+.playerNode {
+  position: absolute;
+  transform: translate(-50%, -7px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: opacity 0.2s ease;
+  pointer-events: auto; 
+  z-index: 10;
+}
+
+.playerNode:hover {
+  z-index: 20;
+}
+
+.feetRing {
+  width: 34px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  margin-bottom: 2px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+.ballMarker {
+  width: 0; 
+  height: 0; 
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 10px solid #22c55e;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.8));
+  margin-bottom: 15px;
+}
+
+.idBox {
+  background: #ffffff;
+  color: #000000;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-bottom: 2px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+  cursor: pointer;
+}
+
+.metricText {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.2px;
+  text-shadow: 
+    -1px -1px 0 #000,  
+     1px -1px 0 #000,
+    -1px  1px 0 #000,
+     1px  1px 0 #000,
+     0px  2px 3px rgba(0,0,0,0.9);
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.outOfFocus {
+  opacity: 0.15;
+}
