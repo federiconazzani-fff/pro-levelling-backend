@@ -5,8 +5,7 @@
   "plugins": {
     "GoogleAuth": {
       "scopes": ["profile", "email"],
-      "serverClientId": "986409597877-qkkal2gkvo6dv9dr6k78sut6rm852juk.apps.googleusercontent.com",
-      "forceCodeForRefreshToken": true
+      "serverClientId": "986409597877-qkkal2gkvo6dv9dr6k78sut6rm852juk.apps.googleusercontent.com"
     }
   }
 }

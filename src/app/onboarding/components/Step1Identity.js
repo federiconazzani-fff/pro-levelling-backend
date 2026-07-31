@@ -45,7 +45,6 @@ export default function Step1Identity({ formData, updateFormData, onNext }) {
           GoogleAuth.initialize({
             clientId: "986409597877-qkkal2gkvo6dv9dr6k78sut6rm852juk.apps.googleusercontent.com",
             scopes: ["profile", "email"],
-            grantOfflineAccess: true,
           });
           const googleUser = await GoogleAuth.signIn();
           const credential = GoogleAuthProvider.credential(googleUser.authentication.idToken);
