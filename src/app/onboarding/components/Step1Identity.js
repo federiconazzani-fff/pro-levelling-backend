@@ -1,29 +1,32 @@
 import { useEffect } from "react";
 import { haptic } from "@/utils/haptics";
 import { auth } from "@/utils/firebase";
-import { signInWithPopup, getRedirectResult, GoogleAuthProvider } from "firebase/auth";
+import { signInWithPopup, signInWithCredential, getRedirectResult, GoogleAuthProvider } from "firebase/auth";
+import { Capacitor } from "@capacitor/core";
+import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 
 export default function Step1Identity({ formData, updateFormData, onNext }) {
   useEffect(() => {
-    getRedirectResult(auth).then((result) => {
-      if (result && result.user) {
-        const user = result.user;
-        const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
-        const firstName = nameParts[0] || "";
-        const lastName = nameParts.slice(1).join(" ") || "";
+    if (!Capacitor.isNativePlatform()) {
+      getRedirectResult(auth).then((result) => {
+        if (result && result.user) {
+          const user = result.user;
+          const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
+          const firstName = nameParts[0] || "";
+          const lastName = nameParts.slice(1).join(" ") || "";
 
-        updateFormData({
-          email: user.email || "",
-          firstName: firstName,
-          lastName: lastName,
-          birthDate: formData.birthDate || "2000-01-01"
-        });
-        setTimeout(() => onNext(), 500);
-      }
-    }).catch((error) => {
-      console.error("Redirect login error", error);
-      alert("Errore durante il login con Google: " + error.message);
-    });
+          updateFormData({
+            email: user.email || "",
+            firstName: firstName,
+            lastName: lastName,
+            birthDate: formData.birthDate || "2000-01-01"
+          });
+          setTimeout(() => onNext(), 500);
+        }
+      }).catch((error) => {
+        console.error("Redirect login error", error);
+      });
+    }
   }, []);
   const calculateAge = (dateString) => {
     if (!dateString) return "--";
@@ -38,22 +41,44 @@ export default function Step1Identity({ formData, updateFormData, onNext }) {
     haptic.success();
     if (providerName === "Google") {
       try {
-        const provider = new GoogleAuthProvider();
-        const result = await signInWithPopup(auth, provider);
-        if (result && result.user) {
-          const user = result.user;
-          const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
-          updateFormData({
-            email: user.email || "",
-            firstName: nameParts[0] || "",
-            lastName: nameParts.slice(1).join(" ") || "",
-            birthDate: formData.birthDate || "2000-01-01"
+        if (Capacitor.isNativePlatform()) {
+          GoogleAuth.initialize({
+            clientId: "986409597877-qkkal2gkvo6dv9dr6k78sut6rm852juk.apps.googleusercontent.com",
+            scopes: ["profile", "email"],
+            grantOfflineAccess: true,
           });
-          setTimeout(() => onNext(), 500);
+          const googleUser = await GoogleAuth.signIn();
+          const credential = GoogleAuthProvider.credential(googleUser.authentication.idToken);
+          const result = await signInWithCredential(auth, credential);
+          if (result && result.user) {
+            const user = result.user;
+            const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
+            updateFormData({
+              email: user.email || "",
+              firstName: nameParts[0] || "",
+              lastName: nameParts.slice(1).join(" ") || "",
+              birthDate: formData.birthDate || "2000-01-01"
+            });
+            setTimeout(() => onNext(), 500);
+          }
+        } else {
+          const provider = new GoogleAuthProvider();
+          const result = await signInWithPopup(auth, provider);
+          if (result && result.user) {
+            const user = result.user;
+            const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
+            updateFormData({
+              email: user.email || "",
+              firstName: nameParts[0] || "",
+              lastName: nameParts.slice(1).join(" ") || "",
+              birthDate: formData.birthDate || "2000-01-01"
+            });
+            setTimeout(() => onNext(), 500);
+          }
         }
       } catch (error) {
         console.error("Google login init error", error);
-        alert("Errore di inizializzazione login con Google: " + error.message);
+        alert("Errore di inizializzazione login con Google: " + (error.message || JSON.stringify(error)));
       }
     }
   };
