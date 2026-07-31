@@ -7,26 +7,24 @@ import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 
 export default function Step1Identity({ formData, updateFormData, onNext }) {
   useEffect(() => {
-    if (!Capacitor.isNativePlatform()) {
-      getRedirectResult(auth).then((result) => {
-        if (result && result.user) {
-          const user = result.user;
-          const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
-          const firstName = nameParts[0] || "";
-          const lastName = nameParts.slice(1).join(" ") || "";
+    getRedirectResult(auth).then((result) => {
+      if (result && result.user) {
+        const user = result.user;
+        const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
+        const firstName = nameParts[0] || "";
+        const lastName = nameParts.slice(1).join(" ") || "";
 
-          updateFormData({
-            email: user.email || "",
-            firstName: firstName,
-            lastName: lastName,
-            birthDate: formData.birthDate || "2000-01-01"
-          });
-          setTimeout(() => onNext(), 500);
-        }
-      }).catch((error) => {
-        console.error("Redirect login error", error);
-      });
-    }
+        updateFormData({
+          email: user.email || "",
+          firstName: firstName,
+          lastName: lastName,
+          birthDate: formData.birthDate || "2000-01-01"
+        });
+        setTimeout(() => onNext(), 500);
+      }
+    }).catch((error) => {
+      console.error("Redirect login error", error);
+    });
   }, []);
   const calculateAge = (dateString) => {
     if (!dateString) return "--";
@@ -41,26 +39,31 @@ export default function Step1Identity({ formData, updateFormData, onNext }) {
     haptic.success();
     if (providerName === "Google") {
       try {
-        if (Capacitor.isNativePlatform()) {
-          GoogleAuth.initialize({
-            clientId: "986409597877-qkkal2gkvo6dv9dr6k78sut6rm852juk.apps.googleusercontent.com",
-            scopes: ["profile", "email"],
-          });
-          const googleUser = await GoogleAuth.signIn();
-          const credential = GoogleAuthProvider.credential(googleUser.authentication.idToken);
-          const result = await signInWithCredential(auth, credential);
-          if (result && result.user) {
-            const user = result.user;
-            const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
-            updateFormData({
-              email: user.email || "",
-              firstName: nameParts[0] || "",
-              lastName: nameParts.slice(1).join(" ") || "",
-              birthDate: formData.birthDate || "2000-01-01"
+        try {
+          if (Capacitor.isNativePlatform()) {
+            GoogleAuth.initialize({
+              clientId: "986409597877-qkkal2gkvo6dv9dr6k78sut6rm852juk.apps.googleusercontent.com",
+              scopes: ["profile", "email"],
             });
-            setTimeout(() => onNext(), 500);
+            const googleUser = await GoogleAuth.signIn();
+            const credential = GoogleAuthProvider.credential(googleUser.authentication.idToken);
+            const result = await signInWithCredential(auth, credential);
+            if (result && result.user) {
+              const user = result.user;
+              const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
+              updateFormData({
+                email: user.email || "",
+                firstName: nameParts[0] || "",
+                lastName: nameParts.slice(1).join(" ") || "",
+                birthDate: formData.birthDate || "2000-01-01"
+              });
+              setTimeout(() => onNext(), 500);
+            }
+          } else {
+            throw new Error("Web fallback");
           }
-        } else {
+        } catch (nativeError) {
+          console.warn("Native Google auth fallback to popup", nativeError);
           const provider = new GoogleAuthProvider();
           const result = await signInWithPopup(auth, provider);
           if (result && result.user) {
@@ -77,7 +80,9 @@ export default function Step1Identity({ formData, updateFormData, onNext }) {
         }
       } catch (error) {
         console.error("Google login init error", error);
-        alert("Errore di inizializzazione login con Google: " + (error.message || JSON.stringify(error)));
+        if (error.code !== "auth/popup-closed-by-user") {
+          alert("Errore di inizializzazione login con Google: " + (error.message || JSON.stringify(error)));
+        }
       }
     }
   };
