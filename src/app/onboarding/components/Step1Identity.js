@@ -1,26 +1,44 @@
 import { useEffect } from "react";
 import { haptic } from "@/utils/haptics";
-import { auth } from "@/utils/firebase";
+import { auth, db } from "@/utils/firebase";
 import { signInWithPopup, signInWithCredential, getRedirectResult, GoogleAuthProvider } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 import { Capacitor } from "@capacitor/core";
 import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 
 export default function Step1Identity({ formData, updateFormData, onNext }) {
+  const handleAuthenticatedUser = async (user) => {
+    try {
+      const docRef = doc(db, "users", user.uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const existingProfile = docSnap.data();
+        localStorage.setItem("elite_pro_profile", JSON.stringify(existingProfile));
+        window.location.href = "/";
+        return;
+      }
+    } catch (e) {
+      console.warn("Error fetching profile from Firestore:", e);
+    }
+
+    const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+
+    updateFormData({
+      uid: user.uid,
+      email: user.email || "",
+      firstName: firstName,
+      lastName: lastName,
+      birthDate: formData.birthDate || "2000-01-01"
+    });
+    setTimeout(() => onNext(), 500);
+  };
+
   useEffect(() => {
     getRedirectResult(auth).then((result) => {
       if (result && result.user) {
-        const user = result.user;
-        const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
-        const firstName = nameParts[0] || "";
-        const lastName = nameParts.slice(1).join(" ") || "";
-
-        updateFormData({
-          email: user.email || "",
-          firstName: firstName,
-          lastName: lastName,
-          birthDate: formData.birthDate || "2000-01-01"
-        });
-        setTimeout(() => onNext(), 500);
+        handleAuthenticatedUser(result.user);
       }
     }).catch((error) => {
       console.error("Redirect login error", error);
@@ -45,19 +63,12 @@ export default function Step1Identity({ formData, updateFormData, onNext }) {
               clientId: "986409597877-qkkal2gkvo6dv9dr6k78sut6rm852juk.apps.googleusercontent.com",
               scopes: ["profile", "email"],
             });
+            await GoogleAuth.signOut().catch(() => {});
             const googleUser = await GoogleAuth.signIn();
             const credential = GoogleAuthProvider.credential(googleUser.authentication.idToken);
             const result = await signInWithCredential(auth, credential);
             if (result && result.user) {
-              const user = result.user;
-              const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
-              updateFormData({
-                email: user.email || "",
-                firstName: nameParts[0] || "",
-                lastName: nameParts.slice(1).join(" ") || "",
-                birthDate: formData.birthDate || "2000-01-01"
-              });
-              setTimeout(() => onNext(), 500);
+              await handleAuthenticatedUser(result.user);
             }
           } else {
             throw new Error("Web fallback");
@@ -65,17 +76,10 @@ export default function Step1Identity({ formData, updateFormData, onNext }) {
         } catch (nativeError) {
           console.warn("Native Google auth fallback to popup", nativeError);
           const provider = new GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: "select_account" });
           const result = await signInWithPopup(auth, provider);
           if (result && result.user) {
-            const user = result.user;
-            const nameParts = user.displayName ? user.displayName.split(" ") : ["", ""];
-            updateFormData({
-              email: user.email || "",
-              firstName: nameParts[0] || "",
-              lastName: nameParts.slice(1).join(" ") || "",
-              birthDate: formData.birthDate || "2000-01-01"
-            });
-            setTimeout(() => onNext(), 500);
+            await handleAuthenticatedUser(result.user);
           }
         }
       } catch (error) {

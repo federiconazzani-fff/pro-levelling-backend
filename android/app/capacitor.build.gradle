@@ -10,6 +10,7 @@ android {
 apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
 dependencies {
     implementation project(':capacitor-community-background-geolocation')
+    implementation project(':codetrix-studio-capacitor-google-auth')
     implementation project(':whiteguru-capacitor-plugin-video-editor')
 
 }

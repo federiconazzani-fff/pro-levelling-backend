@@ -1,9 +1,23 @@
-import { User, Edit2 } from "lucide-react";
+import { User, Edit2, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { auth } from "@/utils/firebase";
+import { signOut } from "firebase/auth";
+import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 
 export default function IdentityHeader({ profile }) {
   const router = useRouter();
   if (!profile) return null;
+
+  const handleLogout = async () => {
+    try {
+      await GoogleAuth.signOut().catch(() => {});
+      await signOut(auth).catch(() => {});
+    } catch (e) {
+      console.warn("Logout error:", e);
+    }
+    localStorage.removeItem("elite_pro_profile");
+    router.push("/onboarding");
+  };
 
   const calculateAge = (dateString) => {
     if (!dateString) return "--";
@@ -48,21 +62,39 @@ export default function IdentityHeader({ profile }) {
           </div>
         </div>
         
-        <button 
-          onClick={() => {
-            if(window.haptic) window.haptic.medium();
-            router.push("/onboarding");
-          }}
-          className="btn-secondary pseudo-haptic hover-lift"
-          style={{ 
-            width: "44px", height: "44px", borderRadius: "50%", padding: 0, 
-            display: "flex", alignItems: "center", justifyContent: "center", 
-            background: "#fff", border: "2px solid #111", boxShadow: "2px 2px 0px #111" 
-          }}
-          title="Modifica Profilo"
-        >
-          <Edit2 size={18} color="#111" strokeWidth={2.5} />
-        </button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button 
+            onClick={() => {
+              if(window.haptic) window.haptic.medium();
+              router.push("/onboarding");
+            }}
+            className="btn-secondary pseudo-haptic hover-lift"
+            style={{ 
+              width: "44px", height: "44px", borderRadius: "50%", padding: 0, 
+              display: "flex", alignItems: "center", justifyContent: "center", 
+              background: "#fff", border: "2px solid #111", boxShadow: "2px 2px 0px #111" 
+            }}
+            title="Modifica Profilo"
+          >
+            <Edit2 size={18} color="#111" strokeWidth={2.5} />
+          </button>
+
+          <button 
+            onClick={() => {
+              if(window.haptic) window.haptic.medium();
+              handleLogout();
+            }}
+            className="btn-secondary pseudo-haptic hover-lift"
+            style={{ 
+              width: "44px", height: "44px", borderRadius: "50%", padding: 0, 
+              display: "flex", alignItems: "center", justifyContent: "center", 
+              background: "#fff", border: "2px solid #111", boxShadow: "2px 2px 0px #111" 
+            }}
+            title="Esci / Cambia Account"
+          >
+            <LogOut size={18} color="#ef4444" strokeWidth={2.5} />
+          </button>
+        </div>
       </div>
 
       {/* 2. Dati Personali e Biometrici */}

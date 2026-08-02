@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { haptic } from "@/utils/haptics";
+import { auth, db } from "@/utils/firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 import Step1Identity from "./components/Step1Identity";
 import Step2Biometrics from "./components/Step2Biometrics";
@@ -77,13 +79,26 @@ export default function Onboarding() {
     }
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     haptic.heavy(); // Heavy for completion
     localStorage.setItem("elite_pro_profile", JSON.stringify(formData));
     
     // Start 7-day free trial if not already started
     if (!localStorage.getItem("elite_pro_trial_start")) {
       localStorage.setItem("elite_pro_trial_start", Date.now().toString());
+    }
+
+    const uid = formData.uid || auth.currentUser?.uid;
+    if (uid) {
+      try {
+        await setDoc(doc(db, "users", uid), {
+          ...formData,
+          uid,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      } catch (e) {
+        console.warn("Error saving profile to Firestore:", e);
+      }
     }
 
     router.push("/");
