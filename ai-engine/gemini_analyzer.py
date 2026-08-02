@@ -337,34 +337,49 @@ def upload_to_gemini(path, mime_type=None):
     return file
 
 def analyze_video(video_path, category):
-    """Analizza il video usando Gemini Flash 2.5"""
+    """Analizza il video usando Gemini 1.5 Flash"""
+    cat = category.lower().strip()
     prompt = ""
-    if category == "tecnica":
+    if cat in ["tecnica", "technical", "technic", "tecnico"]:
         prompt = PROMPT_TECNICA
-    elif category == "atletica":
+    elif cat in ["atletica", "athletic", "athletics", "atletico"]:
         prompt = PROMPT_ATLETICA
-    elif category == "estetica":
+    elif cat in ["estetica", "aesthetic", "aesthetics", "estetico"]:
         prompt = PROMPT_ESTETICA
     else:
-        raise ValueError(f"Categoria {category} non valida.")
+        print(f"Avviso: Categoria '{category}' non predefinita, utilizzo PROMPT_TECNICA di default.")
+        prompt = PROMPT_TECNICA
 
     print(f"Avvio caricamento video per categoria: {category.upper()}")
     video_file = upload_to_gemini(video_path, mime_type="video/mp4")
     
-    print("Avvio analisi...")
-    model = genai.GenerativeModel("models/gemini-2.5-flash") 
+    print("Avvio analisi con gemini-1.5-flash...")
+    model = genai.GenerativeModel("gemini-1.5-flash") 
     
     response = model.generate_content([video_file, prompt])
     
     result_text = response.text
     result_text = result_text.replace("```json", "").replace("```", "").strip()
     
+    # Estrarre in modo sicuro solo il blocco JSON valido
+    first_brace = result_text.find('{')
+    first_bracket = result_text.find('[')
+    
+    if first_brace != -1 and (first_bracket == -1 or first_brace < first_bracket):
+        start_idx = first_brace
+        end_idx = result_text.rfind('}') + 1
+        result_text = result_text[start_idx:end_idx]
+    elif first_bracket != -1:
+        start_idx = first_bracket
+        end_idx = result_text.rfind(']') + 1
+        result_text = result_text[start_idx:end_idx]
+    
     return result_text
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analisi AI del video di allenamento")
     parser.add_argument("--video", required=True, help="Percorso del file video locale da analizzare")
-    parser.add_argument("--category", required=True, choices=["tecnica", "atletica", "estetica"], help="Il tipo di analisi")
+    parser.add_argument("--category", required=True, help="Il tipo di analisi (tecnica, atletica, estetica, technical, athletic, ecc.)")
     
     args = parser.parse_args()
     

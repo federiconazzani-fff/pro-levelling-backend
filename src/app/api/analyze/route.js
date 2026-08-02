@@ -10,8 +10,8 @@ export async function POST(request) {
     }
 
     // Trigger GitHub Actions repository_dispatch
-    const GITHUB_TOKEN = process.env.GITHUB_PAT;
-    const GITHUB_REPO = process.env.GITHUB_REPO; // es. "username/pro.levelling"
+    const GITHUB_TOKEN = process.env.GITHUB_PAT || process.env.GITHUB_TOKEN;
+    const GITHUB_REPO = process.env.GITHUB_REPO || "federiconazzani-fff/pro-levelling-backend";
 
     if (!GITHUB_TOKEN || !GITHUB_REPO) {
       return NextResponse.json({ error: "GitHub configuration missing in .env" }, { status: 500 });

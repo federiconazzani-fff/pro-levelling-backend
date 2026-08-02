@@ -3,6 +3,18 @@ name: AI Video Analysis Engine
 on:
   repository_dispatch:
     types: [analyze_video]
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: 'URL del video da analizzare'
+        required: true
+      category:
+        description: 'Categoria (TECHNICAL, ATHLETIC, ecc.)'
+        required: true
+        default: 'TECHNICAL'
+      callback_url:
+        description: 'URL Webhook callback (opzionale)'
+        required: false
 
 jobs:
   analyze:
@@ -23,16 +35,17 @@ jobs:
           
       - name: Download Video
         run: |
-          wget -O video.mp4 "${{ github.event.client_payload.video_url }}"
+          wget -O video.mp4 "${{ github.event.client_payload.video_url || github.event.inputs.video_url }}"
           
       - name: Run Gemini AI Analysis
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          python ai-engine/gemini_analyzer.py --video video.mp4 --category "${{ github.event.client_payload.category }}"
+          python ai-engine/gemini_analyzer.py --video video.mp4 --category "${{ github.event.client_payload.category || github.event.inputs.category }}"
           
       - name: Send Results back to App
+        if: ${{ github.event.client_payload.callback_url != '' || github.event.inputs.callback_url != '' }}
         run: |
-          curl -X POST "${{ github.event.client_payload.callback_url }}" \
+          curl -i -X POST "${{ github.event.client_payload.callback_url || github.event.inputs.callback_url }}" \
             -H "Content-Type: application/json" \
-            -d @analysis_result.json
+            -d @analysis_result.json || true
