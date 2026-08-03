@@ -9,8 +9,13 @@ const SYNC_KEYS = [
   "elite_pro_profile",
   "elite_pro_library",
   "elite_pro_gps_history",
+  "elite_pro_gps_data",
   "elite_pro_daily_logs",
   "elite_pro_comprehensive_targets",
+  "elite_pro_workouts",
+  "elite_pro_workout_sessions",
+  "elite_pro_meditations_history",
+  "elite_pro_ssg_history",
   "elite_pro_last_seen_stage"
 ];
 
@@ -39,6 +44,7 @@ export const loadUserDataFromFirestore = async (uid, email = "") => {
     }
 
     // 1. PRIORITÀ ASSOLUTA: Cerca in Firestore qualsiasi documento associato a questa stessa EMAIL
+    let foundDocs = [];
     if (cleanEmail) {
       try {
         const usersRef = collection(db, "users");
@@ -51,86 +57,143 @@ export const loadUserDataFromFirestore = async (uid, email = "") => {
         }
 
         if (!querySnapshot.empty) {
-          let bestDoc = querySnapshot.docs[0].data();
-          querySnapshot.docs.forEach((d) => {
-            const docData = d.data();
-            const currScore = (docData.library?.length || 0) * 10 + (docData.gps_history?.length || 0) * 5 + (docData.profile?.weight ? 20 : 0);
-            const bestScore = (bestDoc.library?.length || 0) * 10 + (bestDoc.gps_history?.length || 0) * 5 + (bestDoc.profile?.weight ? 20 : 0);
-            if (currScore > bestScore) {
-              bestDoc = docData;
-            }
-          });
-          data = bestDoc;
+          foundDocs = querySnapshot.docs.map(d => d.data());
         }
       } catch (errQuery) {
         console.warn("Query per email fallita:", errQuery);
       }
     }
 
-    // 2. Se non c'è nulla con questa email, cerca per UID
+    // 2. Cerca anche il documento per UID
     const docRef = doc(db, "users", uid);
-    if (!data) {
+    try {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        data = docSnap.data();
+        foundDocs.push(docSnap.data());
       }
+    } catch (errUid) {
+      console.warn("GetDoc per UID fallito:", errUid);
     }
 
-    if (!data) {
+    if (foundDocs.length === 0) {
       return false;
     }
 
-    // 3. Associa istantaneamente questo UID e questa email su Firestore affinché siano sempre sincronizzati e unificati
-    const userEmail = cleanEmail || data.email || data.profile?.email || "";
-    try {
-      await setDoc(docRef, { ...data, uid, email: userEmail }, { merge: true });
-    } catch (errSync) {
-      console.warn("Merge immediato UID fallito:", errSync);
-    }
+    // 3. MERGE COMPLETO DI TUTTI I DOCUMENTI PER QUESTA EMAIL
+    // Se l'utente ha un doc con il profilo e un altro con libreria/GPS li uniamo in uno unico super-profilo!
+    let mergedProfile = null;
+    let mergedLibraryMap = new Map();
+    let mergedGpsMap = new Map();
+    let mergedDailyLogs = {};
+    let mergedTargets = null;
+    let mergedWorkouts = [];
+    let mergedWorkoutSessions = [];
+    let mergedMeditations = [];
+    let mergedSsg = [];
+    let lastSeenStage = "1";
 
-    // 1. Profile
-    if (data.profile || data.firstName || data.email) {
-      const profileObj = data.profile || {
+    foundDocs.forEach(d => {
+      // Profile
+      if (d.profile || d.firstName || d.email) {
+        const p = d.profile || d;
+        if (!mergedProfile || (p.weight && !mergedProfile.weight) || (p.height && !mergedProfile.height)) {
+          mergedProfile = { ...mergedProfile, ...p };
+        }
+      }
+
+      // Library
+      const libArr = Array.isArray(d.library) ? d.library : (Array.isArray(d.userLibrary) ? d.userLibrary : []);
+      libArr.forEach(item => {
+        if (item && (item.id || item.title)) {
+          const key = item.id || `${item.title}_${item.date}`;
+          mergedLibraryMap.set(key, item);
+        }
+      });
+
+      // GPS
+      const gpsArr = Array.isArray(d.gps_history) ? d.gps_history : (Array.isArray(d.gps_data) ? d.gps_data : []);
+      gpsArr.forEach(item => {
+        if (item && (item.id || item.date)) {
+          const key = item.id || `${item.date}_${item.time || ''}`;
+          mergedGpsMap.set(key, item);
+        }
+      });
+
+      // Daily Logs
+      if (d.daily_logs && typeof d.daily_logs === "object") {
+        mergedDailyLogs = { ...mergedDailyLogs, ...d.daily_logs };
+      }
+
+      // Targets
+      if (d.comprehensive_targets && !mergedTargets) {
+        mergedTargets = d.comprehensive_targets;
+      }
+
+      // Workouts
+      if (Array.isArray(d.workouts)) mergedWorkouts = [...mergedWorkouts, ...d.workouts];
+      if (Array.isArray(d.workout_sessions)) mergedWorkoutSessions = [...mergedWorkoutSessions, ...d.workout_sessions];
+      if (Array.isArray(d.meditations_history)) mergedMeditations = [...mergedMeditations, ...d.meditations_history];
+      if (Array.isArray(d.ssg_history)) mergedSsg = [...mergedSsg, ...d.ssg_history];
+
+      if (d.last_seen_stage) lastSeenStage = d.last_seen_stage.toString();
+    });
+
+    const finalLibrary = Array.from(mergedLibraryMap.values());
+    const finalGps = Array.from(mergedGpsMap.values());
+    const userEmail = cleanEmail || mergedProfile?.email || "";
+
+    // 4. Salva in LocalStorage tutti i moduli
+    if (mergedProfile) {
+      const profileObj = {
         uid: uid,
-        email: data.email || email || "",
-        firstName: data.firstName || "",
-        lastName: data.lastName || "",
-        birthDate: data.birthDate || "",
-        height: data.height || "",
-        weight: data.weight || "",
-        teamName: data.teamName || "",
-        category: data.category || "",
-        role: data.role || "",
-        level: data.level || "Dilettante",
-        idol: data.idol || "",
-        skills: data.skills || []
+        email: userEmail,
+        firstName: mergedProfile.firstName || "",
+        lastName: mergedProfile.lastName || "",
+        birthDate: mergedProfile.birthDate || "",
+        height: mergedProfile.height || "",
+        weight: mergedProfile.weight || "",
+        teamName: mergedProfile.teamName || "",
+        category: mergedProfile.category || "",
+        role: mergedProfile.role || "",
+        level: mergedProfile.level || "Dilettante",
+        idol: mergedProfile.idol || "",
+        skills: mergedProfile.skills || []
       };
       localStorage.setItem("elite_pro_profile", JSON.stringify(profileObj));
     }
 
-    // 2. Library (Video & sessioni analizzate)
-    if (Array.isArray(data.library)) {
-      localStorage.setItem("elite_pro_library", JSON.stringify(data.library));
-    }
+    localStorage.setItem("elite_pro_library", JSON.stringify(finalLibrary));
+    localStorage.setItem("elite_pro_gps_history", JSON.stringify(finalGps));
+    localStorage.setItem("elite_pro_gps_data", JSON.stringify(finalGps));
+    localStorage.setItem("elite_pro_daily_logs", JSON.stringify(mergedDailyLogs));
+    if (mergedTargets) localStorage.setItem("elite_pro_comprehensive_targets", JSON.stringify(mergedTargets));
+    if (mergedWorkouts.length) localStorage.setItem("elite_pro_workouts", JSON.stringify(mergedWorkouts));
+    if (mergedWorkoutSessions.length) localStorage.setItem("elite_pro_workout_sessions", JSON.stringify(mergedWorkoutSessions));
+    if (mergedMeditations.length) localStorage.setItem("elite_pro_meditations_history", JSON.stringify(mergedMeditations));
+    if (mergedSsg.length) localStorage.setItem("elite_pro_ssg_history", JSON.stringify(mergedSsg));
+    localStorage.setItem("elite_pro_last_seen_stage", lastSeenStage);
 
-    // 3. GPS History
-    if (Array.isArray(data.gps_history)) {
-      localStorage.setItem("elite_pro_gps_history", JSON.stringify(data.gps_history));
-    }
+    // 5. Salva ed Unifica immediatamente il payload completo su Firestore sotto questo UID
+    const mergedPayload = {
+      updatedAt: new Date().toISOString(),
+      email: userEmail,
+      ...(mergedProfile && { profile: { ...mergedProfile, email: userEmail } }),
+      library: finalLibrary,
+      gps_history: finalGps,
+      gps_data: finalGps,
+      daily_logs: mergedDailyLogs,
+      comprehensive_targets: mergedTargets,
+      workouts: mergedWorkouts,
+      workout_sessions: mergedWorkoutSessions,
+      meditations_history: mergedMeditations,
+      ssg_history: mergedSsg,
+      last_seen_stage: lastSeenStage
+    };
 
-    // 4. Daily Logs
-    if (data.daily_logs && typeof data.daily_logs === "object") {
-      localStorage.setItem("elite_pro_daily_logs", JSON.stringify(data.daily_logs));
-    }
-
-    // 5. Targets
-    if (data.comprehensive_targets) {
-      localStorage.setItem("elite_pro_comprehensive_targets", JSON.stringify(data.comprehensive_targets));
-    }
-
-    // 6. Last Seen Stage
-    if (data.last_seen_stage) {
-      localStorage.setItem("elite_pro_last_seen_stage", data.last_seen_stage.toString());
+    try {
+      await setDoc(docRef, mergedPayload, { merge: true });
+    } catch (errMerge) {
+      console.warn("Merge Firestore UID fallito:", errMerge);
     }
 
     return true;
@@ -161,21 +224,30 @@ export const syncUserDataToFirestore = async (uid, email = "") => {
 
     const profile = getLocalJSON("elite_pro_profile", null);
     const library = getLocalJSON("elite_pro_library", []);
-    const gpsHistory = getLocalJSON("elite_pro_gps_history", []);
+    const gpsHistory = getLocalJSON("elite_pro_gps_history", getLocalJSON("elite_pro_gps_data", []));
     const dailyLogs = getLocalJSON("elite_pro_daily_logs", {});
     const targets = getLocalJSON("elite_pro_comprehensive_targets", null);
+    const workouts = getLocalJSON("elite_pro_workouts", []);
+    const workoutSessions = getLocalJSON("elite_pro_workout_sessions", []);
+    const meditations = getLocalJSON("elite_pro_meditations_history", []);
+    const ssg = getLocalJSON("elite_pro_ssg_history", []);
     const lastSeenStage = localStorage.getItem("elite_pro_last_seen_stage") || "1";
 
-    const userEmail = email || profile?.email || "";
+    const userEmail = (email || profile?.email || "").toLowerCase();
 
     const payload = {
       updatedAt: new Date().toISOString(),
-      ...(userEmail && { email: userEmail.toLowerCase() }),
-      ...(profile && { profile: { ...profile, email: userEmail.toLowerCase() }, ...profile }),
+      ...(userEmail && { email: userEmail }),
+      ...(profile && { profile: { ...profile, email: userEmail }, ...profile }),
       library,
       gps_history: gpsHistory,
+      gps_data: gpsHistory,
       daily_logs: dailyLogs,
       comprehensive_targets: targets,
+      workouts,
+      workout_sessions: workoutSessions,
+      meditations_history: meditations,
+      ssg_history: ssg,
       last_seen_stage: lastSeenStage
     };
 
@@ -213,4 +285,5 @@ export const autoSyncToFirestore = () => {
     console.warn("Auto sync background error:", err);
   }
 };
+
 
