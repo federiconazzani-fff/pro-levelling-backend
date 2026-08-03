@@ -21,7 +21,7 @@ export default function Step1Identity({ formData, updateFormData, onNext }) {
 
   const handleAuthenticatedUser = async (user) => {
     try {
-      const hasData = await loadUserDataFromFirestore(user.uid);
+      const hasData = await loadUserDataFromFirestore(user.uid, user.email || formData.email);
       if (hasData) {
         setAuthSuccess(`Accesso effettuato! Bentornato, ${user.email}`);
         haptic.success();

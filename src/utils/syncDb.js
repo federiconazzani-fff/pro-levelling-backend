@@ -3,7 +3,7 @@
  * Ensures cross-device synchronization for Pro.levelling users.
  */
 import { db } from "./firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, getDocs, limit } from "firebase/firestore";
 
 const SYNC_KEYS = [
   "elite_pro_profile",
@@ -17,20 +17,52 @@ const SYNC_KEYS = [
 /**
  * Loads all synced user data from Firestore into localStorage
  * @param {string} uid User ID
+ * @param {string} [email] Optional User Email for profile unification across login methods
  * @returns {Promise<boolean>} True if profile exists and was loaded
  */
-export const loadUserDataFromFirestore = async (uid) => {
+export const loadUserDataFromFirestore = async (uid, email) => {
   if (!uid || typeof window === "undefined") return false;
 
   try {
     const docRef = doc(db, "users", uid);
-    const docSnap = await getDoc(docRef);
+    let docSnap = await getDoc(docRef);
+    let data = null;
 
-    if (!docSnap.exists()) {
-      return false;
+    if (docSnap.exists()) {
+      data = docSnap.data();
+    } else if (email) {
+      // Unifica automaticamente account separati (Google Login vs Email/Password) con la stessa email
+      const cleanEmail = email.trim().toLowerCase();
+      const q = query(
+        collection(db, "users"),
+        where("email", "==", cleanEmail),
+        limit(1)
+      );
+      let querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        const qProfile = query(
+          collection(db, "users"),
+          where("profile.email", "==", cleanEmail),
+          limit(1)
+        );
+        querySnapshot = await getDocs(qProfile);
+      }
+
+      if (!querySnapshot.empty) {
+        data = querySnapshot.docs[0].data();
+        // Unifica istantaneamente il profilo sull'UID corrente per eliminare i profili sdoppiati
+        try {
+          await setDoc(docRef, { ...data, uid }, { merge: true });
+        } catch (errMerge) {
+          console.warn("Errore unificazione profilo Firestore:", errMerge);
+        }
+      }
     }
 
-    const data = docSnap.data();
+    if (!data) {
+      return false;
+    }
 
     // 1. Profile
     if (data.profile || data.firstName || data.email) {
