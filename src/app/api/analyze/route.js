@@ -10,21 +10,44 @@ export async function POST(request) {
     }
 
     const isTechnical = category.toUpperCase() === "TECHNICAL" || category.toUpperCase() === "TECNICA";
-    const webhookUrl = isTechnical
-      ? "https://primary-production-5044d.up.railway.app/webhook/TECNICA-ANALISYS"
-      : "https://primary-production-5044d.up.railway.app/webhook/ATLETICA-ANALISYS";
+    
+    // Webhook paths forniti dall'utente:
+    // Tecnica: /webhook/video-analisys
+    // Atletica: /webhook/analizza-video
+    const path = isTechnical ? "webhook/video-analisys" : "webhook/analizza-video";
+    const baseUrl = process.env.N8N_BASE_URL || "https://primary-production-5044d.up.railway.app";
+    let webhookUrl = `${baseUrl}/${path}`;
 
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        videoUrl: videoUrl,
-        category: category.toUpperCase(),
-        callbackUrl: callbackUrl
-      })
-    });
+    if (isTechnical && process.env.N8N_WEBHOOK_URL_TECNICA) {
+      webhookUrl = process.env.N8N_WEBHOOK_URL_TECNICA;
+    } else if (!isTechnical && process.env.N8N_WEBHOOK_URL_ATLETICA) {
+      webhookUrl = process.env.N8N_WEBHOOK_URL_ATLETICA;
+    }
+
+    let response;
+    try {
+      response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoUrl: videoUrl,
+          category: category.toUpperCase(),
+          callbackUrl: callbackUrl
+        })
+      });
+    } catch (fetchErr) {
+      console.warn(`Fetch su ${webhookUrl} fallito, provo fallback su localhost:5678...`, fetchErr);
+      const localUrl = `http://localhost:5678/${path}`;
+      response = await fetch(localUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoUrl: videoUrl,
+          category: category.toUpperCase(),
+          callbackUrl: callbackUrl
+        })
+      });
+    }
 
     if (!response.ok) {
       const errText = await response.text();
