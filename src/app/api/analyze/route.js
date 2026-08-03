@@ -9,40 +9,30 @@ export async function POST(request) {
       return NextResponse.json({ error: "Missing videoUrl or category" }, { status: 400 });
     }
 
-    // Trigger GitHub Actions repository_dispatch
-    const GITHUB_TOKEN = process.env.GITHUB_PAT || process.env.GITHUB_TOKEN;
-    const GITHUB_REPO = process.env.GITHUB_REPO || "federiconazzani-fff/pro-levelling-backend";
+    const isTechnical = category.toUpperCase() === "TECHNICAL" || category.toUpperCase() === "TECNICA";
+    const webhookUrl = isTechnical
+      ? "https://primary-production-5044d.up.railway.app/webhook/TECNICA-ANALISYS"
+      : "https://primary-production-5044d.up.railway.app/webhook/ATLETICA-ANALISYS";
 
-    if (!GITHUB_TOKEN || !GITHUB_REPO) {
-      return NextResponse.json({ error: "GitHub configuration missing in .env" }, { status: 500 });
-    }
-
-    const githubApiUrl = `https://api.github.com/repos/${GITHUB_REPO}/dispatches`;
-
-    const response = await fetch(githubApiUrl, {
+    const response = await fetch(webhookUrl, {
       method: "POST",
       headers: {
-        "Accept": "application/vnd.github.v3+json",
-        "Authorization": `token ${GITHUB_TOKEN}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        event_type: "analyze_video",
-        client_payload: {
-          video_url: videoUrl,
-          category: category.toLowerCase(),
-          callback_url: callbackUrl // Webhook locale/remoto dove GitHub manderà il risultato
-        }
+        videoUrl: videoUrl,
+        category: category.toUpperCase(),
+        callbackUrl: callbackUrl
       })
     });
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error("GitHub Actions error:", errText);
-      return NextResponse.json({ error: "Failed to trigger GitHub Action" }, { status: 500 });
+      console.error("n8n Railway Webhook error:", errText);
+      return NextResponse.json({ error: "Failed to trigger n8n Webhook" }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, message: "Analysis triggered on GitHub Actions" });
+    return NextResponse.json({ success: true, message: "Analysis triggered on n8n Railway Webhook" });
 
   } catch (error) {
     console.error("API error:", error);
