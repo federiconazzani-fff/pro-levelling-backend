@@ -33,13 +33,20 @@ export const loadUserDataFromFirestore = async (uid, email = "") => {
     } else if (email) {
       // Se non esiste l'UID, cerca se c'è un profilo già creato con la stessa email (es. Google vs Email/Password)
       try {
+        const cleanEmail = email.trim().toLowerCase();
         const usersRef = collection(db, "users");
-        const q = query(usersRef, where("email", "==", email.toLowerCase()));
-        const querySnapshot = await getDocs(q);
+        let q = query(usersRef, where("email", "==", cleanEmail));
+        let querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+          q = query(usersRef, where("profile.email", "==", cleanEmail));
+          querySnapshot = await getDocs(q);
+        }
+
         if (!querySnapshot.empty) {
           data = querySnapshot.docs[0].data();
           // Associa all'istante il nuovo UID allo stesso profilo
-          await setDoc(docRef, { ...data, uid, email: email.toLowerCase() }, { merge: true });
+          await setDoc(docRef, { ...data, uid, email: cleanEmail }, { merge: true });
         }
       } catch (errQuery) {
         console.warn("Query per email fallita:", errQuery);
