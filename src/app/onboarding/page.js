@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { haptic } from "@/utils/haptics";
 import { auth, db } from "@/utils/firebase";
 import { doc, setDoc } from "firebase/firestore";
+import { syncUserDataToFirestore } from "@/utils/syncDb";
 
 import Step1Identity from "./components/Step1Identity";
 import Step2Biometrics from "./components/Step2Biometrics";
@@ -79,7 +80,7 @@ export default function Onboarding() {
     }
   };
 
-  const handleFinish = async () => {
+  const handleFinish = () => {
     haptic.heavy(); // Heavy for completion
     localStorage.setItem("elite_pro_profile", JSON.stringify(formData));
     
@@ -90,17 +91,22 @@ export default function Onboarding() {
 
     const uid = formData.uid || auth.currentUser?.uid;
     if (uid) {
-      try {
-        await setDoc(doc(db, "users", uid), {
-          ...formData,
-          uid,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      } catch (e) {
-        console.warn("Error saving profile to Firestore:", e);
-      }
+      // Sincronizza su Firestore in background senza bloccare la navigazione
+      (async () => {
+        try {
+          await setDoc(doc(db, "users", uid), {
+            ...formData,
+            uid,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          await syncUserDataToFirestore(uid);
+        } catch (e) {
+          console.warn("Error saving profile to Firestore:", e);
+        }
+      })();
     }
 
+    // Reindirizza istantaneamente alla Home
     router.push("/");
   };
 

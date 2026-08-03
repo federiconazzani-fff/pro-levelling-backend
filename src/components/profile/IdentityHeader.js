@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { auth } from "@/utils/firebase";
 import { signOut } from "firebase/auth";
 import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
+import { clearAllUserData } from "@/utils/syncDb";
 
 export default function IdentityHeader({ profile }) {
   const router = useRouter();
@@ -15,7 +16,7 @@ export default function IdentityHeader({ profile }) {
     } catch (e) {
       console.warn("Logout error:", e);
     }
-    localStorage.removeItem("elite_pro_profile");
+    clearAllUserData();
     router.push("/onboarding");
   };
 
