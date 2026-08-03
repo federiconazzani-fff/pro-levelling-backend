@@ -25,15 +25,22 @@ export const loadUserDataFromFirestore = async (uid, email = "") => {
 
   try {
     let data = null;
-    const docRef = doc(db, "users", uid);
-    const docSnap = await getDoc(docRef);
+    let cleanEmail = "";
+    if (email) {
+      cleanEmail = email.trim().toLowerCase();
+    } else {
+      const localProf = localStorage.getItem("elite_pro_profile");
+      if (localProf) {
+        try {
+          const parsed = JSON.parse(localProf);
+          if (parsed?.email) cleanEmail = parsed.email.trim().toLowerCase();
+        } catch {}
+      }
+    }
 
-    if (docSnap.exists()) {
-      data = docSnap.data();
-    } else if (email) {
-      // Se non esiste l'UID, cerca se c'è un profilo già creato con la stessa email (es. Google vs Email/Password)
+    // 1. PRIORITÀ ASSOLUTA: Cerca in Firestore qualsiasi documento associato a questa stessa EMAIL
+    if (cleanEmail) {
       try {
-        const cleanEmail = email.trim().toLowerCase();
         const usersRef = collection(db, "users");
         let q = query(usersRef, where("email", "==", cleanEmail));
         let querySnapshot = await getDocs(q);
@@ -44,17 +51,41 @@ export const loadUserDataFromFirestore = async (uid, email = "") => {
         }
 
         if (!querySnapshot.empty) {
-          data = querySnapshot.docs[0].data();
-          // Associa all'istante il nuovo UID allo stesso profilo
-          await setDoc(docRef, { ...data, uid, email: cleanEmail }, { merge: true });
+          let bestDoc = querySnapshot.docs[0].data();
+          querySnapshot.docs.forEach((d) => {
+            const docData = d.data();
+            const currScore = (docData.library?.length || 0) * 10 + (docData.gps_history?.length || 0) * 5 + (docData.profile?.weight ? 20 : 0);
+            const bestScore = (bestDoc.library?.length || 0) * 10 + (bestDoc.gps_history?.length || 0) * 5 + (bestDoc.profile?.weight ? 20 : 0);
+            if (currScore > bestScore) {
+              bestDoc = docData;
+            }
+          });
+          data = bestDoc;
         }
       } catch (errQuery) {
         console.warn("Query per email fallita:", errQuery);
       }
     }
 
+    // 2. Se non c'è nulla con questa email, cerca per UID
+    const docRef = doc(db, "users", uid);
+    if (!data) {
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        data = docSnap.data();
+      }
+    }
+
     if (!data) {
       return false;
+    }
+
+    // 3. Associa istantaneamente questo UID e questa email su Firestore affinché siano sempre sincronizzati e unificati
+    const userEmail = cleanEmail || data.email || data.profile?.email || "";
+    try {
+      await setDoc(docRef, { ...data, uid, email: userEmail }, { merge: true });
+    } catch (errSync) {
+      console.warn("Merge immediato UID fallito:", errSync);
     }
 
     // 1. Profile
@@ -165,5 +196,21 @@ export const clearAllUserData = () => {
   });
   localStorage.removeItem("elite_pro_trial_start");
   console.log("All local user data cleared.");
+};
+
+/**
+ * Automatically pushes current local data to Firestore if logged in
+ */
+export const autoSyncToFirestore = () => {
+  if (typeof window === "undefined") return;
+  try {
+    import("./firebase").then(({ auth }) => {
+      if (auth && auth.currentUser) {
+        syncUserDataToFirestore(auth.currentUser.uid, auth.currentUser.email || "");
+      }
+    }).catch(() => {});
+  } catch (err) {
+    console.warn("Auto sync background error:", err);
+  }
 };
 

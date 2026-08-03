@@ -1,12 +1,18 @@
 import { User, Edit2, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { auth } from "@/utils/firebase";
 import { signOut } from "firebase/auth";
 import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
-import { clearAllUserData } from "@/utils/syncDb";
+import { clearAllUserData, autoSyncToFirestore } from "@/utils/syncDb";
 
 export default function IdentityHeader({ profile }) {
   const router = useRouter();
+
+  useEffect(() => {
+    autoSyncToFirestore();
+  }, []);
+
   if (!profile) return null;
 
   const handleLogout = async () => {
