@@ -321,6 +321,13 @@ export default function AnalysisPage() {
     try {
       setProcessingState("uploading");
       setAnalysisProgress(5);
+      setTimeRemaining(45);
+
+      // Avvia subito l'avanzamento progressivo in modo da non fermarsi mai al 10%
+      progressInterval = setInterval(() => {
+        setAnalysisProgress(prev => Math.min(95, prev + 3));
+        setTimeRemaining(prev => Math.max(3, prev - 1));
+      }, 1000);
 
       let publicVideoUrl = targetUrl;
       try {
@@ -328,7 +335,12 @@ export default function AnalysisPage() {
           const response = await fetch(targetUrl);
           const blob = await response.blob();
           const fileRef = ref(storage, `ai-analysis-videos/${Date.now()}_video.mp4`);
-          await uploadBytes(fileRef, blob);
+          
+          // Timeout anti-blocco 5 secondi su Android Storage
+          await Promise.race([
+            uploadBytes(fileRef, blob),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 5000))
+          ]);
           publicVideoUrl = await getDownloadURL(fileRef);
         }
       } catch (uploadErr) {
@@ -337,13 +349,6 @@ export default function AnalysisPage() {
       }
 
       setProcessingState("analyzing");
-      setAnalysisProgress(30);
-      setTimeRemaining(45);
-
-      progressInterval = setInterval(() => {
-        setAnalysisProgress(prev => Math.min(95, prev + 3));
-        setTimeRemaining(prev => Math.max(3, prev - 1));
-      }, 1000);
 
       const analysisId = Date.now().toString();
       const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://pro-levelling-backend.vercel.app";

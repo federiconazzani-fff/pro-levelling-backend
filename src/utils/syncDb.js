@@ -3,7 +3,7 @@
  * Ensures cross-device synchronization for Pro.levelling users.
  */
 import { db } from "./firebase";
-import { doc, getDoc, setDoc, collection, query, where, getDocs, limit } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 
 const SYNC_KEYS = [
   "elite_pro_profile",
@@ -15,48 +15,34 @@ const SYNC_KEYS = [
 ];
 
 /**
- * Loads all synced user data from Firestore into localStorage
+ * Loads all synced user data from Firestore into localStorage (searches by UID and Email)
  * @param {string} uid User ID
- * @param {string} [email] Optional User Email for profile unification across login methods
+ * @param {string} email Optional email to unify Google Login and Email Login profiles
  * @returns {Promise<boolean>} True if profile exists and was loaded
  */
-export const loadUserDataFromFirestore = async (uid, email) => {
+export const loadUserDataFromFirestore = async (uid, email = "") => {
   if (!uid || typeof window === "undefined") return false;
 
   try {
-    const docRef = doc(db, "users", uid);
-    let docSnap = await getDoc(docRef);
     let data = null;
+    const docRef = doc(db, "users", uid);
+    const docSnap = await getDoc(docRef);
 
     if (docSnap.exists()) {
       data = docSnap.data();
     } else if (email) {
-      // Unifica automaticamente account separati (Google Login vs Email/Password) con la stessa email
-      const cleanEmail = email.trim().toLowerCase();
-      const q = query(
-        collection(db, "users"),
-        where("email", "==", cleanEmail),
-        limit(1)
-      );
-      let querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        const qProfile = query(
-          collection(db, "users"),
-          where("profile.email", "==", cleanEmail),
-          limit(1)
-        );
-        querySnapshot = await getDocs(qProfile);
-      }
-
-      if (!querySnapshot.empty) {
-        data = querySnapshot.docs[0].data();
-        // Unifica istantaneamente il profilo sull'UID corrente per eliminare i profili sdoppiati
-        try {
-          await setDoc(docRef, { ...data, uid }, { merge: true });
-        } catch (errMerge) {
-          console.warn("Errore unificazione profilo Firestore:", errMerge);
+      // Se non esiste l'UID, cerca se c'è un profilo già creato con la stessa email (es. Google vs Email/Password)
+      try {
+        const usersRef = collection(db, "users");
+        const q = query(usersRef, where("email", "==", email.toLowerCase()));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          data = querySnapshot.docs[0].data();
+          // Associa all'istante il nuovo UID allo stesso profilo
+          await setDoc(docRef, { ...data, uid, email: email.toLowerCase() }, { merge: true });
         }
+      } catch (errQuery) {
+        console.warn("Query per email fallita:", errQuery);
       }
     }
 
@@ -68,7 +54,7 @@ export const loadUserDataFromFirestore = async (uid, email) => {
     if (data.profile || data.firstName || data.email) {
       const profileObj = data.profile || {
         uid: uid,
-        email: data.email || "",
+        email: data.email || email || "",
         firstName: data.firstName || "",
         lastName: data.lastName || "",
         birthDate: data.birthDate || "",
@@ -119,8 +105,9 @@ export const loadUserDataFromFirestore = async (uid, email) => {
 /**
  * Uploads all local user data to Firestore under users/{uid}
  * @param {string} uid User ID
+ * @param {string} email User Email
  */
-export const syncUserDataToFirestore = async (uid) => {
+export const syncUserDataToFirestore = async (uid, email = "") => {
   if (!uid || typeof window === "undefined") return;
 
   try {
@@ -141,9 +128,12 @@ export const syncUserDataToFirestore = async (uid) => {
     const targets = getLocalJSON("elite_pro_comprehensive_targets", null);
     const lastSeenStage = localStorage.getItem("elite_pro_last_seen_stage") || "1";
 
+    const userEmail = email || profile?.email || "";
+
     const payload = {
       updatedAt: new Date().toISOString(),
-      ...(profile && { profile, ...profile }),
+      ...(userEmail && { email: userEmail.toLowerCase() }),
+      ...(profile && { profile: { ...profile, email: userEmail.toLowerCase() }, ...profile }),
       library,
       gps_history: gpsHistory,
       daily_logs: dailyLogs,
@@ -169,3 +159,4 @@ export const clearAllUserData = () => {
   localStorage.removeItem("elite_pro_trial_start");
   console.log("All local user data cleared.");
 };
+
