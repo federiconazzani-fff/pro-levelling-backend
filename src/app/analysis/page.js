@@ -9,10 +9,9 @@ import { storeAnalysisData } from "@/utils/analyticsDb";
 import AestheticsRoom from "@/components/analysis/AestheticsRoom";
 import AestheticsBarChart from "@/components/analysis/AestheticsBarChart";
 import { parseAestheticsPayload } from "@/utils/aestheticsParser";
-import { auth, db, storage } from "@/utils/firebase";
+import { db, storage } from "@/utils/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, onSnapshot } from "firebase/firestore";
-import { syncUserDataToFirestore } from "@/utils/syncDb";
 
 // -- MOCK LOCAL DATA FROM UPLOAD/LIBRARY
 const MOCK_DATA = [
@@ -256,160 +255,109 @@ export default function AnalysisPage() {
     }
 
     let progressInterval = null;
-    let fallbackTimer = null;
     let unsub = null;
-
-    const completeWithPayload = async (parsedResponse) => {
-      if (unsub) unsub();
-      if (progressInterval) clearInterval(progressInterval);
-      if (fallbackTimer) clearTimeout(fallbackTimer);
-
-      setAnalysisProgress(100);
-      setTimeRemaining(0);
-
-      // Normalize Popups for UI Processing
-      if (parsedResponse.lista_popup) {
-        parsedResponse.lista_popup = parsedResponse.lista_popup.map((p, index) => {
-          let timeInSeconds = 0;
-          if (typeof p.key_moment_time === 'string') {
-            const parts = p.key_moment_time.split(':');
-            if (parts.length === 2) {
-               timeInSeconds = parseInt(parts[0], 10) * 60 + parseFloat(parts[1]);
-            } else if (parts.length === 3) {
-               timeInSeconds = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2]);
-            } else {
-               timeInSeconds = parseFloat(p.key_moment_time) || 0;
-            }
-          } else {
-            timeInSeconds = p.key_moment_time || 0;
-          }
-          return {
-            ...p,
-            id: p.id || `popup_${index}`,
-            key_moment_time: timeInSeconds
-          };
-        });
-      }
-
-      // Aggiorna lo stato nella libreria locale ed esegui sync cloud
-      try {
-        const rawLib = localStorage.getItem("elite_pro_library");
-        if (rawLib && activeVideo?.id) {
-          const lib = JSON.parse(rawLib);
-          const updatedLib = lib.map(item => item.id === activeVideo.id ? { ...item, status: "ANALYZED", analysisResult: parsedResponse } : item);
-          localStorage.setItem("elite_pro_library", JSON.stringify(updatedLib));
-          await syncUserDataToFirestore(auth.currentUser?.uid);
-        }
-      } catch (errSync) {
-        console.warn("Errore aggiornamento libreria analysis:", errSync);
-      }
-
-      if (isRep) {
-        setSessionResults(prev => ({ ...prev, [repIdx]: parsedResponse }));
-        setCurrentRepIdx(prev => prev + 1);
-        setProcessingState("idle");
-        haptic.heavy();
-      } else {
-        setAnalysisData(parsedResponse);
-        setEngineTargetUrl(targetUrl);
-        setViewState("engine");
-        setIsLoading(false);
-        haptic.heavy();
-      }
-    };
 
     try {
       setProcessingState("uploading");
       setAnalysisProgress(5);
-      setTimeRemaining(45);
-
-      // Avvia subito l'avanzamento progressivo in modo da non fermarsi mai al 10%
-      progressInterval = setInterval(() => {
-        setAnalysisProgress(prev => Math.min(95, prev + 3));
-        setTimeRemaining(prev => Math.max(3, prev - 1));
-      }, 1000);
-
-      let publicVideoUrl = targetUrl;
+      
+      let blob;
       try {
-        if (targetUrl && !targetUrl.includes("interactive-examples.mdn.mozilla.net")) {
-          const response = await fetch(targetUrl);
-          const blob = await response.blob();
-          const fileRef = ref(storage, `ai-analysis-videos/${Date.now()}_video.mp4`);
-          
-          // Timeout anti-blocco 5 secondi su Android Storage
-          await Promise.race([
-            uploadBytes(fileRef, blob),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 5000))
-          ]);
-          publicVideoUrl = await getDownloadURL(fileRef);
-        }
-      } catch (uploadErr) {
-        console.warn("Upload Storage non riuscito o url mock, utilizzo URL sorgente del video:", uploadErr);
-        publicVideoUrl = targetUrl;
+        const response = await fetch(targetUrl);
+        blob = await response.blob();
+      } catch (err) {
+        throw new Error("ERROR: Unable to retrieve video file for upload. It may have expired or is not accessible locally.");
       }
-
+      
+      const fileRef = ref(storage, `ai-analysis-videos/${Date.now()}_video.mp4`);
+      await uploadBytes(fileRef, blob);
+      const publicVideoUrl = await getDownloadURL(fileRef);
+      
       setProcessingState("analyzing");
-
+      setAnalysisProgress(30);
+      setTimeRemaining(45); 
+      
+      progressInterval = setInterval(() => {
+        setAnalysisProgress(prev => Math.min(95, prev + 2));
+        setTimeRemaining(prev => Math.max(5, prev - 1));
+      }, 1000);
+      
       const analysisId = Date.now().toString();
+      
+      // Essendo un'app mobile (APK), le chiamate API devono puntare al server backend (Vercel)
+      // NON POSSONO ESSERE RELATIVE come "/api/analyze"
       const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://pro-levelling-backend.vercel.app";
       const callbackUrl = `${BACKEND_URL}/api/analyze-webhook?id=${analysisId}`;
 
-      let useFallback = false;
-      try {
-        const resApi = await fetch(`${BACKEND_URL}/api/analyze`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            videoUrl: publicVideoUrl,
-            category: selectedMacro,
-            callbackUrl: callbackUrl
-          })
-        });
+      const resApi = await fetch(`${BACKEND_URL}/api/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoUrl: publicVideoUrl,
+          category: selectedMacro,
+          callbackUrl: callbackUrl
+        })
+      });
 
-        const resJson = await resApi.json().catch(() => ({}));
+      if (!resApi.ok) {
+         throw new Error("Errore nell'avvio dell'analisi su GitHub Actions");
+      }
 
-        // 1. Risposta del Motore AI Diretto Gemini (Istantanea al 100% dal Cloud Vercel)
-        if (resJson && resJson.success && resJson.data) {
-          clearInterval(progressInterval);
+      // Attendi che GitHub Actions salvi il risultato su Firestore
+      unsub = onSnapshot(doc(db, "analyses", analysisId), (docSnap) => {
+        if (docSnap.exists()) {
+          const parsedResponse = docSnap.data();
+          if (unsub) unsub();
+          if (progressInterval) clearInterval(progressInterval);
+          
           setAnalysisProgress(100);
-          completeWithPayload(resJson.data);
-          return;
-        }
-
-        if (!resApi.ok || resJson.fallback || !resJson.success) {
-          useFallback = true;
-        }
-      } catch (errApi) {
-        console.warn("API /analyze non raggiungibile da client, attivazione fallback:", errApi);
-        useFallback = true;
-      }
-
-      if (useFallback) {
-        // Fallback simulato automatico per evitare blocchi al 10%
-        setTimeout(() => {
-          completeWithPayload(MOCK_N8N_RESPONSE);
-        }, 3000);
-      } else {
-        // Attendi che GitHub Actions salvi il risultato su Firestore con timer di sicurezza max 18 secondi
-        unsub = onSnapshot(doc(db, "analyses", analysisId), (docSnap) => {
-          if (docSnap.exists()) {
-            const parsedResponse = docSnap.data();
-            completeWithPayload(parsedResponse);
+          setTimeRemaining(0);
+          
+          // Normalize Popups for UI Processing
+          if (parsedResponse.lista_popup) {
+            parsedResponse.lista_popup = parsedResponse.lista_popup.map((p, index) => {
+              let timeInSeconds = 0;
+              if (typeof p.key_moment_time === 'string') {
+                const parts = p.key_moment_time.split(':');
+                if (parts.length === 2) {
+                   timeInSeconds = parseInt(parts[0], 10) * 60 + parseFloat(parts[1]);
+                } else if (parts.length === 3) {
+                   timeInSeconds = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseFloat(parts[2]);
+                } else {
+                   timeInSeconds = parseFloat(p.key_moment_time) || 0;
+                }
+              } else {
+                timeInSeconds = p.key_moment_time || 0;
+              }
+              return {
+                ...p,
+                id: p.id || `popup_${index}`,
+                key_moment_time: timeInSeconds
+              };
+            });
           }
-        });
 
-        fallbackTimer = setTimeout(() => {
-          console.warn("Timeout attesa Firestore dal webhook, utilizzo analisi di sicurezza.");
-          completeWithPayload(MOCK_N8N_RESPONSE);
-        }, 18000);
-      }
+          if (isRep) {
+            setSessionResults(prev => ({ ...prev, [repIdx]: parsedResponse }));
+            setCurrentRepIdx(prev => prev + 1);
+            setProcessingState("idle");
+            haptic.heavy();
+          } else {
+            setAnalysisData(parsedResponse);
+            setEngineTargetUrl(targetUrl);
+            setViewState("engine");
+            setIsLoading(false);
+            haptic.heavy();
+          }
+        }
+      });
 
     } catch (e) {
       if (progressInterval) clearInterval(progressInterval);
-      if (fallbackTimer) clearTimeout(fallbackTimer);
       if (unsub) unsub();
-      console.warn("Errore elaborazione analisi, utilizzo fallback immediato:", e);
-      completeWithPayload(MOCK_N8N_RESPONSE);
+      setProcessingState("error");
+      console.error("Catch detail:", e);
+      alert(`${e.name}: ${e.message}`);
     }
   };
 

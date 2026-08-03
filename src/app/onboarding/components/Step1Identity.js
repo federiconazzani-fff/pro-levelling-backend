@@ -97,12 +97,21 @@ export default function Step1Identity({ formData, updateFormData, onNext }) {
             throw new Error("Web fallback");
           }
         } catch (nativeError) {
-          console.warn("Native Google auth fallback to popup", nativeError);
+          console.warn("Native Google auth fallback to redirect/popup", nativeError);
           const provider = new GoogleAuthProvider();
           provider.setCustomParameters({ prompt: "select_account" });
-          const result = await signInWithPopup(auth, provider);
-          if (result && result.user) {
-            await handleAuthenticatedUser(result.user);
+          try {
+            if (Capacitor.isNativePlatform()) {
+              await signInWithRedirect(auth, provider);
+            } else {
+              const result = await signInWithPopup(auth, provider);
+              if (result && result.user) {
+                await handleAuthenticatedUser(result.user);
+              }
+            }
+          } catch (fallbackErr) {
+            console.warn("Popup fallback failed, trying redirect:", fallbackErr);
+            await signInWithRedirect(auth, provider);
           }
         }
       } catch (error) {
